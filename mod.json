@@ -1,0 +1,22 @@
+{
+	"geode": "5.2.0",
+	"gd": {
+		"win": "2.2081",
+		"android": "2.2081",
+		"mac": "2.2081",
+		"ios": "2.2081"
+	},
+	"id": "thesillydoggo.optimisationmod",
+	"name": "OptimisationMod",
+	"version": "v1.0.0",
+	"developer": "TheSillyDoggo",
+	"description": "",
+	"early-load": true,
+	"resources": {
+		"files": [
+			"shaders/*.frag",
+			"shaders/*.vert",
+			"shaders/*.exe"
+		]
+	}
+}
