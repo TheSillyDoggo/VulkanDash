@@ -5,6 +5,12 @@
 #include "vkbind.h"
 #include "vk_mem_alloc.h"
 
+namespace cocos2d
+{
+    class CCNode;
+    class CCRect;
+};
+
 extern VkDevice device;
 extern VkPhysicalDevice physicalDevice;
 extern VkQueue graphicsQueue;
@@ -30,9 +36,5 @@ struct VkSpriteVertex {
     float uv[2] = {0,0};
 };
 
-namespace cocos2d
-{
-    class CCNode;
-};
-
 kmMat4 getNodeToWorldTransform(cocos2d::CCNode* node);
+void updateScissor();

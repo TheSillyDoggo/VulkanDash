@@ -32,10 +32,10 @@ class $modify (VKParticleSystemQuad, CCParticleSystemQuad)
 
     virtual void draw()
     {
-        auto pipeline = VKPipeline::get<VkSpriteVertex>(getBlendFunc());
+        auto pipeline = VKPipeline::get<ccV3F_C4B_T2F>(getBlendFunc());
         
         auto mvp = getNodeToWorldTransform(this);
-        VkSpriteVertex out[m_uTotalParticles * 6 * sizeof(ccV2F_C4B_T2F)];
+        ccV3F_C4B_T2F out[m_uTotalParticles * 6 * sizeof(ccV3F_C4B_T2F)];
 
         const CCPoint v[6] = {
             ccp(0, 0), ccp(0, 1), ccp(1, 0), ccp(1, 0), ccp(1, 1), ccp(0, 1),
@@ -60,25 +60,15 @@ class $modify (VKParticleSystemQuad, CCParticleSystemQuad)
 
                 int b = i * 6 + c;
 
-                out[b].pos[0] = point.vertices.x;
-                out[b].pos[1] = point.vertices.y;
-                out[b].pos[2] = 0;
-
-                out[b].color[0] = point.colors.r / 255.0f;
-                out[b].color[1] = point.colors.g / 255.0f;
-                out[b].color[2] = point.colors.b / 255.0f;
-                out[b].color[3] = point.colors.a / 255.0f;
-
-                out[b].uv[0] = v[c].x;
-                out[b].uv[1] = v[c].y;
-
-                // out[b].uv[0] = m_tTextureRect.origin.x / (float)getTexture()->getPixelsWide() + v[c].x * (m_tTextureRect.size.width / (float)getTexture()->getPixelsWide());
-                // out[b].uv[1] = m_tTextureRect.origin.y / (float)getTexture()->getPixelsHigh() + v[c].y * (m_tTextureRect.size.height / (float)getTexture()->getPixelsHigh());
+                out[b].texCoords = point.texCoords;
+                out[b].colors = point.colors;
+                out[b].vertices.x = point.vertices.x;
+                out[b].vertices.y = point.vertices.y;
             }
         }
 
-        m_fields->memory->resize(m_uTotalParticles * 6 * sizeof(VkSpriteVertex));
-        m_fields->memory->upload(out, m_uTotalParticles * 6 * sizeof(VkSpriteVertex));
+        m_fields->memory->resize(m_uTotalParticles * 6 * sizeof(ccV3F_C4B_T2F));
+        m_fields->memory->upload(out, m_uTotalParticles * 6 * sizeof(ccV3F_C4B_T2F));
 
         vkCmdPushConstants(cmd,
             pipeline->getLayout(),
@@ -107,6 +97,7 @@ class $modify (VKParticleSystemQuad, CCParticleSystemQuad)
             nullptr
         );
 
+        updateScissor();
         vkCmdDraw(cmd, m_uTotalParticles * 6, 1, 0, 0);
     }
 };

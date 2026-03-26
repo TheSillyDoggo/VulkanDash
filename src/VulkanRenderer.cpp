@@ -175,146 +175,6 @@ void recreateSwapchain(uint32_t width, uint32_t height) {
     vkResetCommandBuffer(cmd, 0);
 }
 
-VkPipeline trianglePipeline;
-VkPipelineLayout trianglePipelineLayout;
-
-void CreateTrianglePipeline(const std::vector<uint32_t>& vertSpv, const std::vector<uint32_t>& fragSpv) {
-    VkShaderModule vertShader, fragShader;
-    VkShaderModuleCreateInfo smci{};
-    smci.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
-
-    smci.codeSize = vertSpv.size() * sizeof(uint32_t);
-    smci.pCode = vertSpv.data();
-    vkCreateShaderModule(device, &smci, nullptr, &vertShader);
-
-    smci.codeSize = fragSpv.size() * sizeof(uint32_t);
-    smci.pCode = fragSpv.data();
-    vkCreateShaderModule(device, &smci, nullptr, &fragShader);
-
-    VkPipelineShaderStageCreateInfo stages[2]{};
-    stages[0].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-    stages[0].stage = VK_SHADER_STAGE_VERTEX_BIT;
-    stages[0].module = vertShader;
-    stages[0].pName = "main";
-
-    stages[1].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-    stages[1].stage = VK_SHADER_STAGE_FRAGMENT_BIT;
-    stages[1].module = fragShader;
-    stages[1].pName = "main";
-
-    VkVertexInputBindingDescription binding{};
-    binding.binding = 0;
-    binding.stride = sizeof(VkSpriteVertex);
-    binding.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
-
-    VkVertexInputAttributeDescription attrs[3]{};
-    attrs[0].binding = 0;
-    attrs[0].location = 0;
-    attrs[0].format = VK_FORMAT_R32G32B32_SFLOAT;
-    attrs[0].offset = offsetof(VkSpriteVertex, pos);
-
-    attrs[1].binding = 0;
-    attrs[1].location = 1;
-    attrs[1].format = VK_FORMAT_R32G32B32A32_SFLOAT;
-    attrs[1].offset = offsetof(VkSpriteVertex, color);
-
-    attrs[2].binding = 0;
-    attrs[2].location = 2;
-    attrs[2].format = VK_FORMAT_R32G32_SFLOAT;
-    attrs[2].offset = offsetof(VkSpriteVertex, uv);
-
-    VkPipelineVertexInputStateCreateInfo visci{};
-    visci.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-    visci.vertexBindingDescriptionCount = 1;
-    visci.pVertexBindingDescriptions = &binding;
-    visci.vertexAttributeDescriptionCount = 3;
-    visci.pVertexAttributeDescriptions = attrs;
-
-    VkPipelineInputAssemblyStateCreateInfo iasci{};
-    iasci.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
-    iasci.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
-
-    VkViewport vp{};
-    vp.x = 0; vp.y = (float)swapExtent.height;
-    vp.width = (float)swapExtent.width;
-    vp.height = -(float)swapExtent.height;
-    vp.minDepth = 0.0f; vp.maxDepth = 1.0f;
-
-    VkRect2D sc{};
-    sc.offset = {0,0}; sc.extent = swapExtent;
-
-    VkPipelineViewportStateCreateInfo vpsci{};
-    vpsci.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
-    vpsci.viewportCount = 1; vpsci.pViewports = &vp;
-    vpsci.scissorCount = 1; vpsci.pScissors = &sc;
-
-    VkPipelineRasterizationStateCreateInfo rsci{};
-    rsci.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
-    rsci.cullMode = VK_CULL_MODE_NONE;
-    rsci.polygonMode = VK_POLYGON_MODE_FILL;
-    rsci.lineWidth = 1.0f;
-    // rsci.cullMode = VK_CULL_MODE_BACK_BIT;
-    rsci.frontFace = VK_FRONT_FACE_CLOCKWISE;
-
-    VkPipelineMultisampleStateCreateInfo msci{};
-    msci.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
-    msci.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
-
-    VkPipelineColorBlendAttachmentState cb{};
-    cb.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
-    cb.blendEnable = VK_TRUE;
-
-    cb.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
-    cb.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
-    cb.colorBlendOp = VK_BLEND_OP_ADD;
-
-    cb.srcAlphaBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
-    cb.dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
-    cb.alphaBlendOp = VK_BLEND_OP_ADD;
-
-    cb.colorWriteMask =
-        VK_COLOR_COMPONENT_R_BIT |
-        VK_COLOR_COMPONENT_G_BIT |
-        VK_COLOR_COMPONENT_B_BIT |
-        VK_COLOR_COMPONENT_A_BIT;
-
-    VkPipelineColorBlendStateCreateInfo cbci{};
-    cbci.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
-    cbci.attachmentCount = 1;
-    cbci.pAttachments = &cb;
-
-    VkPushConstantRange pcRange{};
-    pcRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
-    pcRange.offset = 0;
-    pcRange.size = sizeof(float) * 16; // 4x4 matrix
-
-    VkPipelineLayoutCreateInfo plci{};
-    plci.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-    plci.pushConstantRangeCount = 1;
-    plci.pPushConstantRanges = &pcRange;
-    plci.setLayoutCount = 1;
-    plci.pSetLayouts = &textureLayout;
-    vkCreatePipelineLayout(device, &plci, nullptr, &trianglePipelineLayout);
-
-    VkGraphicsPipelineCreateInfo gpci{};
-    gpci.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
-    gpci.stageCount = 2;
-    gpci.pStages = stages;
-    gpci.pVertexInputState = &visci;
-    gpci.pInputAssemblyState = &iasci;
-    gpci.pViewportState = &vpsci;
-    gpci.pRasterizationState = &rsci;
-    gpci.pMultisampleState = &msci;
-    gpci.pColorBlendState = &cbci;
-    gpci.layout = trianglePipelineLayout;
-    gpci.renderPass = renderPass;
-    gpci.subpass = 0;
-
-    vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &gpci, nullptr, &trianglePipeline);
-
-    vkDestroyShaderModule(device, vertShader, nullptr);
-    vkDestroyShaderModule(device, fragShader, nullptr);
-}
 
 VkDescriptorSetLayout textureLayout;
 
@@ -438,7 +298,7 @@ void InitVulkan(HWND hwnd)
     }
 
     CreateTextureDescriptorLayout();
-    CreateTextureDescriptorPool(512);
+    CreateTextureDescriptorPool(4096 * 4);
 
     VmaAllocatorCreateInfo info{};
     info.instance       = instance;
@@ -478,15 +338,6 @@ uint32_t imageIndex;
 
 bool VulkanRenderer::begin()
 {
-    static bool triangleSetup = false;
-
-    if (!triangleSetup) {
-        auto vertSpv = VKShader::create("vert.spv"_spr, "vert.vert"_spr);
-        auto fragSpv = VKShader::create("frag.spv"_spr, "frag.frag"_spr);
-        CreateTrianglePipeline(vertSpv, fragSpv);
-        triangleSetup = true;
-    }
-
     VkResult result = vkAcquireNextImageKHR(device, swapchain, UINT64_MAX, imageAvailable, VK_NULL_HANDLE, &imageIndex);
     vkQueueWaitIdle(graphicsQueue);
 
@@ -674,6 +525,7 @@ class $modify (VKDrawNode, CCDrawNode)
             nullptr
         );
 
+        updateScissor();
         vkCmdDraw(cmd, m_nBufferCount, 1, 0, 0);
     }
 
@@ -783,6 +635,34 @@ class $modify (VKSprite, CCSprite)
             nullptr
         );
 
+        updateScissor();
         vkCmdDraw(cmd, 6, 1, 0, 0);
     }
 };
+
+void updateScissor()
+{
+    if (CCEGLView::get()->isScissorEnabled())
+    {
+        auto rect = CCEGLView::get()->getScissorRect();
+        auto scale = 1.0f / CCDirector::get()->getWinSize().width * swapExtent.width;
+
+        VkRect2D scissor = {};
+        scissor.extent = {
+            (uint32_t)(int)(rect.size.width * scale),
+            (uint32_t)(int)(rect.size.height * scale)
+        };
+        scissor.offset = {
+            (int)(rect.origin.x * scale),
+            (int)(swapExtent.height - scissor.extent.height - rect.origin.y * scale)
+        };
+        vkCmdSetScissor(cmd, 0, 1, &scissor);
+    }
+    else
+    {
+        VkRect2D scissor = {};
+        scissor.offset = {0, 0};
+        scissor.extent = swapExtent;
+        vkCmdSetScissor(cmd, 0, 1, &scissor);
+    }
+}

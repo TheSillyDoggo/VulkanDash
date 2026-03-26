@@ -128,6 +128,7 @@ class $modify (VKLayerColor, CCLayerColor)
             nullptr
         );
 
+        updateScissor();
         vkCmdDraw(cmd, 6, 1, 0, 0);
     }
 };

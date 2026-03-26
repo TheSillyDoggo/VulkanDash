@@ -95,6 +95,7 @@ class $modify (VKTextureAtlas, CCTextureAtlas)
             nullptr
         );
 
+        updateScissor();
         vkCmdDraw(cmd, getTotalQuads() * 6, 1, 0, 0);
     }
 };

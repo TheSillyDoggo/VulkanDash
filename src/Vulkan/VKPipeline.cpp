@@ -166,13 +166,10 @@ VKPipeline* VKPipeline::create<ccV3F_C4B_T2F>(ccBlendFunc func)
     vp.height = -(float)swapExtent.height;
     vp.minDepth = 0.0f; vp.maxDepth = 1.0f;
 
-    VkRect2D sc{};
-    sc.offset = {0,0}; sc.extent = swapExtent;
-
     VkPipelineViewportStateCreateInfo vpsci{};
     vpsci.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
     vpsci.viewportCount = 1; vpsci.pViewports = &vp;
-    vpsci.scissorCount = 1; vpsci.pScissors = &sc;
+    vpsci.scissorCount = 1;
 
     VkPipelineRasterizationStateCreateInfo rsci{};
     rsci.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
@@ -224,6 +221,12 @@ VKPipeline* VKPipeline::create<ccV3F_C4B_T2F>(ccBlendFunc func)
     plci.pSetLayouts = &textureLayout;
     vkCreatePipelineLayout(device, &plci, nullptr, &pl->layout);
 
+    VkDynamicState dynamicStates[] = { VK_DYNAMIC_STATE_SCISSOR };
+    VkPipelineDynamicStateCreateInfo dyst{};
+    dyst.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
+    dyst.dynamicStateCount = 1;
+    dyst.pDynamicStates = dynamicStates;
+
     VkGraphicsPipelineCreateInfo gpci{};
     gpci.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
     gpci.stageCount = 2;
@@ -236,6 +239,7 @@ VKPipeline* VKPipeline::create<ccV3F_C4B_T2F>(ccBlendFunc func)
     gpci.pColorBlendState = &cbci;
     gpci.layout = pl->layout;
     gpci.renderPass = renderPass;
+    gpci.pDynamicState = &dyst;
     gpci.subpass = 0;
 
     vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &gpci, nullptr, &pl->pipeline);
@@ -379,6 +383,10 @@ VKPipeline* VKPipeline::create<VkSpriteVertex>(ccBlendFunc func)
     plci.pSetLayouts = &textureLayout;
     vkCreatePipelineLayout(device, &plci, nullptr, &pl->layout);
 
+    VkPipelineDynamicStateCreateInfo dynamicState{};
+    dynamicState.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
+    dynamicState.flags = VK_DYNAMIC_STATE_SCISSOR;
+
     VkGraphicsPipelineCreateInfo gpci{};
     gpci.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
     gpci.stageCount = 2;
@@ -391,6 +399,7 @@ VKPipeline* VKPipeline::create<VkSpriteVertex>(ccBlendFunc func)
     gpci.pColorBlendState = &cbci;
     gpci.layout = pl->layout;
     gpci.renderPass = renderPass;
+    gpci.pDynamicState = &dynamicState;
     gpci.subpass = 0;
 
     vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &gpci, nullptr, &pl->pipeline);
