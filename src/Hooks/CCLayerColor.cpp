@@ -98,12 +98,9 @@ class $modify (VKLayerColor, CCLayerColor)
     virtual void draw()
     {
         auto pipeline = VKPipeline::get<VkSpriteVertex>(getBlendFunc());
+        pipeline->bind();
 
         auto mvp = getNodeToWorldTransform(this);
-
-        vkCmdBindPipeline(cmd,
-            VK_PIPELINE_BIND_POINT_GRAPHICS,
-            pipeline->getPipeline());
 
         VkBuffer buffers[] = { m_fields->memory->getBuffer() };
         VkDeviceSize offsets[] = { 0 };
@@ -116,19 +113,10 @@ class $modify (VKLayerColor, CCLayerColor)
             sizeof(kmMat4),
             &mvp);
 
-        VkDescriptorSet desc = static_cast<VKTexture2D*>(CCTextureCache::get()->addImage("cc_2x2_white_image", true))->getDescriptor();
-        vkCmdBindDescriptorSets(
-            cmd,
-            VK_PIPELINE_BIND_POINT_GRAPHICS,
-            pipeline->getLayout(),
-            0,
-            1,
-            &desc,
-            0,
-            nullptr
-        );
+        pipeline->bindTexture(CCTextureCache::get()->addImage("cc_2x2_white_image", true));
 
         updateScissor();
+        INCREMENT_DRAW_CALLS(1);
         vkCmdDraw(cmd, 6, 1, 0, 0);
     }
 };

@@ -21,6 +21,8 @@ extern VkRenderPass renderPass;
 extern VkExtent2D swapExtent;
 extern VkCommandBuffer cmd;
 extern VmaAllocator vma;
+extern unsigned int drawOrder;
+extern unsigned int drawCalls;
 
 class VulkanRenderer : public GenericRenderer
 {
@@ -28,6 +30,7 @@ class VulkanRenderer : public GenericRenderer
         virtual bool init();
         virtual bool begin();
         virtual void present();
+        virtual void end();
 };
 
 struct VkSpriteVertex {
@@ -38,3 +41,8 @@ struct VkSpriteVertex {
 
 kmMat4 getNodeToWorldTransform(cocos2d::CCNode* node);
 void updateScissor();
+float getFakeZ();
+VulkanRenderer* getRenderer();
+
+#define INCREMENT_DRAW_CALLS(num) \
+drawCalls += num;

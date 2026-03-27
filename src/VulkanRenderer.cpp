@@ -27,6 +27,8 @@ VkCommandBuffer cmd;
 VkSemaphore imageAvailable;
 VkSemaphore renderFinished;
 VkFence inFlightFence;
+unsigned int drawOrder = 0;
+unsigned int drawCalls = 0;
 
 void CreateInstance()
 {
@@ -99,6 +101,10 @@ void CreateDevice()
     vkGetDeviceQueue(device, queueIndex, 0, &graphicsQueue);
 }
 
+VkImage depthImage;
+VmaAllocation depthAllocation;
+VkImageView depthImageView;
+
 void CreateSwapchain(uint32_t width, uint32_t height)
 {
     VkSurfaceCapabilitiesKHR caps;
@@ -129,6 +135,59 @@ void CreateSwapchain(uint32_t width, uint32_t height)
     vkGetSwapchainImagesKHR(device, swapchain, &count, nullptr);
     swapImages.resize(count);
     vkGetSwapchainImagesKHR(device, swapchain, &count, swapImages.data());
+
+
+
+    VkImageCreateInfo img{};
+    img.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+    img.imageType = VK_IMAGE_TYPE_2D;
+    img.format = VK_FORMAT_D32_SFLOAT;
+    img.extent = { swapExtent.width, swapExtent.height, 1 };
+    img.mipLevels = 1;
+    img.arrayLayers = 1;
+    img.samples = VK_SAMPLE_COUNT_1_BIT;
+    img.tiling = VK_IMAGE_TILING_OPTIMAL;
+    img.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+    img.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+
+    VmaAllocationCreateInfo alloc{};
+    alloc.usage = VMA_MEMORY_USAGE_GPU_ONLY;
+
+    vmaCreateImage(vma, &img, &alloc, &depthImage, &depthAllocation, nullptr);
+
+    VkImageViewCreateInfo view{};
+    view.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+    view.image = depthImage;
+    view.viewType = VK_IMAGE_VIEW_TYPE_2D;
+    view.format = VK_FORMAT_D32_SFLOAT;
+    view.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+    view.subresourceRange.baseMipLevel = 0;
+    view.subresourceRange.levelCount = 1;
+    view.subresourceRange.baseArrayLayer = 0;
+    view.subresourceRange.layerCount = 1;
+
+    vkCreateImageView(device, &view, nullptr, &depthImageView);
+
+    VkImageMemoryBarrier barrier{};
+    barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    barrier.newLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+    barrier.image = depthImage;
+    barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+    barrier.subresourceRange.levelCount = 1;
+    barrier.subresourceRange.layerCount = 1;
+    barrier.srcAccessMask = 0;
+    barrier.dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+
+    vkCmdPipelineBarrier(
+        cmd,
+        VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+        VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT,
+        0,
+        0, nullptr,
+        0, nullptr,
+        1, &barrier
+    );
 }
 
 void recreateSwapchain(uint32_t width, uint32_t height) {
@@ -141,6 +200,9 @@ void recreateSwapchain(uint32_t width, uint32_t height) {
         vkDestroyImageView(device, iv, nullptr);
 
     vkDestroySwapchainKHR(device, swapchain, nullptr);
+
+    vkDestroyImageView(device, depthImageView, nullptr);
+    vmaDestroyImage(vma, depthImage, depthAllocation);
 
     CreateSwapchain(width, height);
 
@@ -164,8 +226,11 @@ void recreateSwapchain(uint32_t width, uint32_t height) {
         VkFramebufferCreateInfo fb{};
         fb.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
         fb.renderPass = renderPass;
-        fb.attachmentCount = 1;
-        fb.pAttachments = &swapImageViews[i];
+        fb.attachmentCount = 2;
+        VkImageView attachments[] = {
+            swapImageViews[i],
+            depthImageView
+        };
         fb.width = swapExtent.width;
         fb.height = swapExtent.height;
         fb.layers = 1;
@@ -217,6 +282,15 @@ void InitVulkan(HWND hwnd)
     CreateInstance();
     CreateSurface(hwnd);
     CreateDevice();
+
+    VmaAllocatorCreateInfo info{};
+    info.instance       = instance;
+    info.physicalDevice = physicalDevice;
+    info.device         = device;
+    info.vulkanApiVersion = VK_API_VERSION_1_1;
+
+    VkResult res = vmaCreateAllocator(&info, &vma);
+
     CreateSwapchain(CCEGLView::get()->getFrameSize().width, CCEGLView::get()->getFrameSize().height);
 
     VkFenceCreateInfo fci{};
@@ -270,15 +344,31 @@ void InitVulkan(HWND hwnd)
     colorRef.attachment = 0;
     colorRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
+    VkAttachmentDescription depth{};
+    depth.format = VK_FORMAT_D32_SFLOAT;
+    depth.samples = VK_SAMPLE_COUNT_1_BIT;
+    depth.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    depth.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    depth.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    depth.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    depth.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    depth.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+
+    VkAttachmentReference depthRef{};
+    depthRef.attachment = 1;
+    depthRef.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+
     VkSubpassDescription subpass{};
     subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
     subpass.colorAttachmentCount = 1;
     subpass.pColorAttachments = &colorRef;
+    subpass.pDepthStencilAttachment = &depthRef;
 
     VkRenderPassCreateInfo rpci{};
     rpci.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
-    rpci.attachmentCount = 1;
-    rpci.pAttachments = &color;
+    rpci.attachmentCount = 2;
+    VkAttachmentDescription attachments[] = { color, depth };
+    rpci.pAttachments = attachments;
     rpci.subpassCount = 1;
     rpci.pSubpasses = &subpass;
 
@@ -289,8 +379,12 @@ void InitVulkan(HWND hwnd)
         VkFramebufferCreateInfo fb{};
         fb.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
         fb.renderPass = renderPass;
-        fb.attachmentCount = 1;
-        fb.pAttachments = &swapImageViews[i];
+        fb.attachmentCount = 2;
+        VkImageView attachments[] = {
+            swapImageViews[i],
+            depthImageView
+        };
+        fb.pAttachments = attachments;
         fb.width = swapExtent.width;
         fb.height = swapExtent.height;
         fb.layers = 1;
@@ -299,14 +393,6 @@ void InitVulkan(HWND hwnd)
 
     CreateTextureDescriptorLayout();
     CreateTextureDescriptorPool(4096 * 4);
-
-    VmaAllocatorCreateInfo info{};
-    info.instance       = instance;
-    info.physicalDevice = physicalDevice;
-    info.device         = device;
-    info.vulkanApiVersion = VK_API_VERSION_1_1;
-
-    VkResult res = vmaCreateAllocator(&info, &vma);
 
     log::error("Vulkan initialised!");
 }
@@ -338,8 +424,13 @@ uint32_t imageIndex;
 
 bool VulkanRenderer::begin()
 {
+    drawOrder = 0;
+    drawCalls = 0;
+
     VkResult result = vkAcquireNextImageKHR(device, swapchain, UINT64_MAX, imageAvailable, VK_NULL_HANDLE, &imageIndex);
-    vkQueueWaitIdle(graphicsQueue);
+    // vkQueueWaitIdle(graphicsQueue);
+    vkWaitForFences(device, 1, &inFlightFence, VK_TRUE, UINT64_MAX);
+    vkResetFences(device, 1, &inFlightFence);
 
     if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR)
     {
@@ -355,8 +446,9 @@ bool VulkanRenderer::begin()
     bi.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
     vkBeginCommandBuffer(cmd, &bi);
 
-    VkClearValue clear{};
-    clear.color = { {0, 0, 0, 0.0f} };
+    VkClearValue clear[2]{};
+    clear[0].color = { {0, 0, 0, 0.0f} };
+    clear[1].depthStencil = { 1.0f, 0 };
 
     VkRenderPassBeginInfo rp{};
     rp.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
@@ -364,8 +456,8 @@ bool VulkanRenderer::begin()
     rp.framebuffer = framebuffers[imageIndex];
     rp.renderArea.offset = {0,0};
     rp.renderArea.extent = swapExtent;
-    rp.clearValueCount = 1;
-    rp.pClearValues = &clear;
+    rp.clearValueCount = 2;
+    rp.pClearValues = clear;
 
     vkCmdBeginRenderPass(cmd, &rp, VK_SUBPASS_CONTENTS_INLINE);
 
@@ -403,20 +495,6 @@ void VulkanRenderer::present()
 }
 
 #include <Geode/cocos/kazmath/include/kazmath/kazmath.h>
-
-kmMat4 getNodeToWorldTransform(cocos2d::CCNode* node)
-{
-    kmMat4 model;
-    kmGLGetMatrix(KM_GL_MODELVIEW, &model);
-
-    kmMat4 projection;
-    kmGLGetMatrix(KM_GL_PROJECTION, &projection);
-
-    kmMat4 mvp;
-    kmMat4Multiply(&mvp, &projection, &model);
-
-    return mvp;
-}
 
 #include <Geode/modify/CCSprite.hpp>
 #include <Geode/modify/CCLayerColor.hpp>
@@ -456,7 +534,7 @@ class $modify (VKDrawNode, CCDrawNode)
 
     virtual bool init()
     {
-        m_fields->mem = VKCocosOwnedMemory::create(512 * sizeof(VkSpriteVertex));
+        m_fields->mem = VKCocosOwnedMemory::create(512 * sizeof(ccV2F_C4B_T2F));
         m_fields->mem->retain();
         return CCDrawNode::init();
     }
@@ -469,34 +547,11 @@ class $modify (VKDrawNode, CCDrawNode)
 
     void render()
     {
-        auto blendPipeline = VKPipeline::get<VkSpriteVertex>(getBlendFunc());
-        int v = m_nBufferCount;
-        
+        auto blendPipeline = VKPipeline::get<ccV2F_C4B_T2F>(getBlendFunc());        
         auto mvp = getNodeToWorldTransform(this);
-        VkSpriteVertex out[m_uBufferCapacity];
 
-        m_fields->mem->resize(m_uBufferCapacity*sizeof(VkSpriteVertex));
-
-        for (size_t i = 0; i < v; i++)
-        {
-            ccV2F_C4B_T2F point = *(ccV2F_C4B_T2F *)(m_pBuffer + (i));
-
-            int b = i;
-
-            out[b].pos[0] = point.vertices.x;
-            out[b].pos[1] = point.vertices.y;
-            out[b].pos[2] = 0;
-
-            out[b].color[0] = point.colors.r / 255.0f;
-            out[b].color[1] = point.colors.g / 255.0f;
-            out[b].color[2] = point.colors.b / 255.0f;
-            out[b].color[3] = point.colors.a / 255.0f;
-
-            out[b].uv[0] = 0;
-            out[b].uv[1] = 0;
-        }
-
-        m_fields->mem->upload(out, m_uBufferCapacity * sizeof(VkSpriteVertex));
+        m_fields->mem->resize(m_uBufferCapacity*sizeof(ccV2F_C4B_T2F));
+        m_fields->mem->upload(m_pBuffer, m_nBufferCount * sizeof(ccV2F_C4B_T2F));
 
         vkCmdPushConstants(cmd,
             blendPipeline->getLayout(),
@@ -505,138 +560,15 @@ class $modify (VKDrawNode, CCDrawNode)
             sizeof(kmMat4),
             &mvp);
 
-        vkCmdBindPipeline(cmd,
-            VK_PIPELINE_BIND_POINT_GRAPHICS,
-            blendPipeline->getPipeline());
+        blendPipeline->bind();
 
         VkBuffer buffers[] = { m_fields->mem->getBuffer() };
         VkDeviceSize offsets[] = { 0 };
         vkCmdBindVertexBuffers(cmd, 0, 1, buffers, offsets);
 
-        VkDescriptorSet desc = static_cast<VKTexture2D*>(CCTextureCache::get()->addImage("cc_2x2_white_image", true))->getDescriptor();
-        vkCmdBindDescriptorSets(
-            cmd,
-            VK_PIPELINE_BIND_POINT_GRAPHICS,
-            blendPipeline->getLayout(),
-            0,              // set = 0
-            1,
-            &desc,
-            0,
-            nullptr
-        );
-
         updateScissor();
+        INCREMENT_DRAW_CALLS(1);
         vkCmdDraw(cmd, m_nBufferCount, 1, 0, 0);
-    }
-
-    void ensureCapacity(unsigned int count)
-    {
-        log::info("CCDrawNode::enusreCapacity: {}", count);
-
-        if(m_nBufferCount + count > m_uBufferCapacity)
-        {
-            m_uBufferCapacity += std::max<unsigned int>(m_uBufferCapacity, count);
-            m_pBuffer = (ccV2F_C4B_T2F*)realloc(m_pBuffer, m_uBufferCapacity*sizeof(ccV2F_C4B_T2F));
-            m_fields->mem->resize(m_uBufferCapacity*sizeof(ccV2F_C4B_T2F));
-        }
-
-        // CCDrawNode::ensureCapacity(count);
-    }
-};
-
-class $modify (VKSprite, CCSprite)
-{
-    struct Fields
-    {
-        VKCocosOwnedMemory* memory = nullptr;
-    };
-
-    void updateMemory()
-    {
-        if (!m_fields->memory)
-            return;
-
-        if (m_pobBatchNode)
-            return;
-
-        ccV3F_C4B_T2F out[6];
-
-        out[0] = m_sQuad.bl;
-        out[1] = m_sQuad.tl;
-        out[2] = m_sQuad.br;
-        out[3] = m_sQuad.br;
-        out[4] = m_sQuad.tr;
-        out[5] = m_sQuad.tl;
-        
-        m_fields->memory->upload(out, sizeof(ccV3F_C4B_T2F) * 6);
-    }
-
-    virtual bool initWithTexture(CCTexture2D *pTexture, const CCRect& rect, bool rotated)
-    {
-        if (!CCSprite::initWithTexture(pTexture, rect, rotated))
-            return false;
-        
-        m_fields->memory = VKCocosOwnedMemory::create(sizeof(ccV3F_C4B_T2F) * 6);
-        m_fields->memory->retain();
-        // this->addTether(m_fields->memory);
-        updateMemory();
-
-        return true;
-    }
-
-    void destructor()
-    {
-        m_fields->memory->release();
-        CCSprite::~CCSprite();
-    }
-
-    void updateColor(void)
-    {
-        CCSprite::updateColor();
-        updateMemory();
-    }
-
-    virtual void setTextureRect(const CCRect& rect, bool rotated, const CCSize& untrimmedSize)
-    {
-        CCSprite::setTextureRect(rect, rotated, untrimmedSize);
-        updateMemory();
-    }
-
-    virtual void draw()
-    {
-        auto blendPipeline = VKPipeline::get<ccV3F_C4B_T2F>(getBlendFunc());
-        auto mvp = getNodeToWorldTransform(this);
-
-        vkCmdBindPipeline(cmd,
-            VK_PIPELINE_BIND_POINT_GRAPHICS,
-            blendPipeline->getPipeline());
-
-        VkBuffer buffers[] = { m_fields->memory->getBuffer() };
-        VkDeviceSize offsets[] = { 0 };
-        vkCmdBindVertexBuffers(cmd, 0, 1, buffers, offsets);
-
-        vkCmdPushConstants(cmd,
-            blendPipeline->getLayout(),
-            VK_SHADER_STAGE_VERTEX_BIT,
-            0,
-            sizeof(kmMat4),
-            &mvp);
-        
-        VkDescriptorSet desc = static_cast<VKTexture2D*>(getTexture())->getDescriptor();
-
-        vkCmdBindDescriptorSets(
-            cmd,
-            VK_PIPELINE_BIND_POINT_GRAPHICS,
-            blendPipeline->getLayout(),
-            0,              // set = 0
-            1,
-            &desc,
-            0,
-            nullptr
-        );
-
-        updateScissor();
-        vkCmdDraw(cmd, 6, 1, 0, 0);
     }
 };
 
@@ -665,4 +597,41 @@ void updateScissor()
         scissor.extent = swapExtent;
         vkCmdSetScissor(cmd, 0, 1, &scissor);
     }
+}
+
+float getFakeZ()
+{
+    drawOrder++;
+    return -1.0f + (drawOrder * 0.000001f);
+}
+
+void CGAffineToGL(const CCAffineTransform *t, GLfloat *m)
+{
+    // | m[0] m[4] m[8]  m[12] |     | m11 m21 m31 m41 |     | a c 0 tx |
+    // | m[1] m[5] m[9]  m[13] |     | m12 m22 m32 m42 |     | b d 0 ty |
+    // | m[2] m[6] m[10] m[14] | <=> | m13 m23 m33 m43 | <=> | 0 0 1  0 |
+    // | m[3] m[7] m[11] m[15] |     | m14 m24 m34 m44 |     | 0 0 0  1 |
+    
+    m[2] = m[3] = m[6] = m[7] = m[8] = m[9] = m[11] = m[14] = 0.0f;
+    m[10] = m[15] = 1.0f;
+    m[0] = t->a; m[4] = t->c; m[12] = t->tx;
+    m[1] = t->b; m[5] = t->d; m[13] = t->ty;
+}
+
+kmMat4 getNodeToWorldTransform(cocos2d::CCNode* node)
+{
+    kmMat4 model;
+    kmGLGetMatrix(KM_GL_MODELVIEW, &model);
+
+    kmMat4 projection;
+    kmGLGetMatrix(KM_GL_PROJECTION, &projection);
+
+    kmMat4 mvp;
+    kmMat4Multiply(&mvp, &projection, &model);
+    return mvp;
+}
+
+void VulkanRenderer::end()
+{
+    
 }

@@ -14,3 +14,8 @@ void GenericRenderer::present()
 {
 
 }
+
+void GenericRenderer::end()
+{
+
+}

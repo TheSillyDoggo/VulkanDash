@@ -72,6 +72,8 @@ void VKCocosOwnedMemory::resize(VkDeviceSize newSize)
     if (newSize <= size)
         return;
 
+    // log::warn("VKCocosOwnedMemory: resizing from {} to {}", size, newSize);
+
     if (buffer)
         vmaDestroyBuffer(vma, buffer, alloc);
 

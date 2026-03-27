@@ -56,16 +56,16 @@ class $modify (VKTextureAtlas, CCTextureAtlas)
 
         for (size_t i = 0; i < getCapacity(); i++)
         {
-            auto m_sQuad = m_pQuads[i];
+            auto quad = m_pQuads[i];
 
-            size_t base = i * 6;
+            size_t b = i * 6;
 
-            out[base + 0] = m_sQuad.bl;
-            out[base + 1] = m_sQuad.tl;
-            out[base + 2] = m_sQuad.br;
-            out[base + 3] = m_sQuad.br;
-            out[base + 4] = m_sQuad.tr;
-            out[base + 5] = m_sQuad.tl;
+            out[b + 0] = quad.bl;
+            out[b + 1] = quad.br;
+            out[b + 2] = quad.tl;
+            out[b + 3] = quad.tr;
+            out[b + 4] = quad.tl;
+            out[b + 5] = quad.br;
         }
         
         vkCmdPushConstants(cmd,
@@ -75,28 +75,16 @@ class $modify (VKTextureAtlas, CCTextureAtlas)
             sizeof(kmMat4),
             &mvp);
 
-        vkCmdBindPipeline(cmd,
-            VK_PIPELINE_BIND_POINT_GRAPHICS,
-            pipeline->getPipeline());
+        pipeline->bind();
+        pipeline->bindTexture(getTexture());
 
         VkBuffer buffers[] = { getMemory()->getBuffer() };
         VkDeviceSize offsets[] = { 0 };
         vkCmdBindVertexBuffers(cmd, 0, 1, buffers, offsets);
 
-        VkDescriptorSet desc = static_cast<VKTexture2D*>(getTexture())->getDescriptor();
-        vkCmdBindDescriptorSets(
-            cmd,
-            VK_PIPELINE_BIND_POINT_GRAPHICS,
-            pipeline->getLayout(),
-            0,              // set = 0
-            1,
-            &desc,
-            0,
-            nullptr
-        );
-
         updateScissor();
-        vkCmdDraw(cmd, getTotalQuads() * 6, 1, 0, 0);
+        INCREMENT_DRAW_CALLS(1);
+        vkCmdDraw(cmd, 6 * getTotalQuads(), 1, 0, 0);
     }
 };
 

@@ -10,4 +10,5 @@ class GenericRenderer
         virtual bool init();
         virtual bool begin();
         virtual void present();
+        virtual void end();
 };

@@ -7,9 +7,9 @@
 
 using namespace geode::prelude;
 
-GenericRenderer* getRenderer()
+VulkanRenderer* getRenderer()
 {
-    static GenericRenderer* instance = nullptr;
+    static VulkanRenderer* instance = nullptr;
 
     if (!instance)
         instance = new VulkanRenderer();
@@ -21,6 +21,20 @@ class $modify (CCEGLView)
 {
     virtual void swapBuffers()
     {
+        static CCLabelBMFont* lbl = []{
+            auto lbl = CCLabelBMFont::create("", "bigFont.fnt");
+            CCPoolManager::sharedPoolManager()->removeObject(lbl);
+            lbl->setAnchorPoint(ccp(0, 0));
+            lbl->setScale(0.5f);
+            lbl->setPosition(ccp(30, 30));
+
+            return lbl;
+        }();
+
+        getRenderer()->end();
+
+        lbl->setString(fmt::format("VK Draw Calls: {}", drawCalls).c_str());
+        lbl->visit();
         getRenderer()->present();
     }
 };

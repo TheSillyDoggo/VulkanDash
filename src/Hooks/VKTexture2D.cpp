@@ -2,21 +2,6 @@
 
 std::unordered_map<CCTexture2D*, VKTexture2D::VKData> data = {};
 
-static uint32_t findMemoryType(uint32_t typeBits, VkMemoryPropertyFlags props)
-{
-    VkPhysicalDeviceMemoryProperties memProps;
-    vkGetPhysicalDeviceMemoryProperties(physicalDevice, &memProps);
-
-    for (uint32_t i = 0; i < memProps.memoryTypeCount; i++)
-    {
-        if ((typeBits & (1 << i)) &&
-            (memProps.memoryTypes[i].propertyFlags & props) == props)
-            return i;
-    }
-
-    return 0;
-}
-
 static VkCommandBuffer beginCmd()
 {
     VkCommandBufferAllocateInfo alloc{};
@@ -222,6 +207,41 @@ void VKTexture2D::destructor()
     // todo: delete the vulkan shit so it doesnt memory leak
 
     CCTexture2D::~CCTexture2D();
+}
+
+void VKTexture2D::setTexParameters(ccTexParams* texParams)
+{
+    auto& vk = data[this];
+
+    if (vk.sampler)
+        vkDestroySampler(device, vk.sampler, nullptr);
+
+    VkSamplerCreateInfo samp{};
+    samp.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+
+    samp.magFilter = (texParams->magFilter == GL_LINEAR) ? VK_FILTER_LINEAR : VK_FILTER_NEAREST;
+    samp.minFilter = (texParams->minFilter == GL_LINEAR) ? VK_FILTER_LINEAR : VK_FILTER_NEAREST;
+
+    samp.addressModeU = (texParams->wrapS == GL_REPEAT) ? VK_SAMPLER_ADDRESS_MODE_REPEAT : VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    samp.addressModeV = (texParams->wrapT == GL_REPEAT) ? VK_SAMPLER_ADDRESS_MODE_REPEAT : VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    samp.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+
+    vkCreateSampler(device, &samp, nullptr, &vk.sampler);
+
+    VkDescriptorImageInfo imgInfo{};
+    imgInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    imgInfo.imageView = vk.imageView;
+    imgInfo.sampler = vk.sampler;
+
+    VkWriteDescriptorSet write{};
+    write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    write.dstSet = vk.descriptorSet;
+    write.dstBinding = 0;
+    write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    write.descriptorCount = 1;
+    write.pImageInfo = &imgInfo;
+
+    vkUpdateDescriptorSets(device, 1, &write, 0, nullptr);
 }
 
 VkImageView VKTexture2D::getImageView()

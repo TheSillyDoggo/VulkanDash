@@ -21,6 +21,7 @@ class $modify (VKTexture2D, CCTexture2D)
     // hooks
     bool initWithData(const void* data, CCTexture2DPixelFormat pixelFormat, unsigned int pixelsWide, unsigned int pixelsHigh, const CCSize& contentSize);
     void destructor();
+    void setTexParameters(ccTexParams* texParams);
 
     VkImageView getImageView();
     VkSampler getSampler();
