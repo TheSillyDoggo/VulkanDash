@@ -29,6 +29,8 @@ VkSemaphore renderFinished;
 VkFence inFlightFence;
 unsigned int drawOrder = 0;
 unsigned int drawCalls = 0;
+unsigned int bindCalls = 0;
+unsigned int bindTextureCalls = 0;
 
 void CreateInstance()
 {
@@ -426,6 +428,8 @@ bool VulkanRenderer::begin()
 {
     drawOrder = 0;
     drawCalls = 0;
+    bindCalls = 0;
+    bindTextureCalls = 0;
 
     VkResult result = vkAcquireNextImageKHR(device, swapchain, UINT64_MAX, imageAvailable, VK_NULL_HANDLE, &imageIndex);
     // vkQueueWaitIdle(graphicsQueue);
@@ -534,9 +538,13 @@ class $modify (VKDrawNode, CCDrawNode)
 
     virtual bool init()
     {
-        m_fields->mem = VKCocosOwnedMemory::create(512 * sizeof(ccV2F_C4B_T2F));
+        if (!CCDrawNode::init())
+            return false;
+
+        m_fields->mem = VKCocosOwnedMemory::create(m_uBufferCapacity * sizeof(ccV2F_C4B_T2F));
         m_fields->mem->retain();
-        return CCDrawNode::init();
+
+        return true;
     }
 
     void destructor()
@@ -550,8 +558,12 @@ class $modify (VKDrawNode, CCDrawNode)
         auto blendPipeline = VKPipeline::get<ccV2F_C4B_T2F>(getBlendFunc());        
         auto mvp = getNodeToWorldTransform(this);
 
-        m_fields->mem->resize(m_uBufferCapacity*sizeof(ccV2F_C4B_T2F));
-        m_fields->mem->upload(m_pBuffer, m_nBufferCount * sizeof(ccV2F_C4B_T2F));
+        if (m_bDirty)
+        {
+            m_fields->mem->resize(m_uBufferCapacity*sizeof(ccV2F_C4B_T2F));
+            m_fields->mem->upload(m_pBuffer, m_nBufferCount * sizeof(ccV2F_C4B_T2F));
+            m_bDirty = false;
+        }
 
         vkCmdPushConstants(cmd,
             blendPipeline->getLayout(),
@@ -605,21 +617,26 @@ float getFakeZ()
     return -1.0f + (drawOrder * 0.000001f);
 }
 
-void CGAffineToGL(const CCAffineTransform *t, GLfloat *m)
-{
-    // | m[0] m[4] m[8]  m[12] |     | m11 m21 m31 m41 |     | a c 0 tx |
-    // | m[1] m[5] m[9]  m[13] |     | m12 m22 m32 m42 |     | b d 0 ty |
-    // | m[2] m[6] m[10] m[14] | <=> | m13 m23 m33 m43 | <=> | 0 0 1  0 |
-    // | m[3] m[7] m[11] m[15] |     | m14 m24 m34 m44 |     | 0 0 0  1 |
-    
-    m[2] = m[3] = m[6] = m[7] = m[8] = m[9] = m[11] = m[14] = 0.0f;
-    m[10] = m[15] = 1.0f;
-    m[0] = t->a; m[4] = t->c; m[12] = t->tx;
-    m[1] = t->b; m[5] = t->d; m[13] = t->ty;
-}
-
 kmMat4 getNodeToWorldTransform(cocos2d::CCNode* node)
 {
+    #ifdef DEPTH_BUFFER_EXPERIMENT
+    kmMat4 model;
+    kmGLGetMatrix(KM_GL_MODELVIEW, &model);
+
+    kmMat4 projection;
+    kmGLGetMatrix(KM_GL_PROJECTION, &projection);
+
+    kmMat4 identity;
+    kmMat4Identity(&identity);
+    identity.mat[14] = getFakeZ();
+    
+    kmMat4 temp;
+    kmMat4Multiply(&temp, &identity, &model);
+
+    kmMat4 mvp;
+    kmMat4Multiply(&mvp, &projection, &temp);
+    #else
+
     kmMat4 model;
     kmGLGetMatrix(KM_GL_MODELVIEW, &model);
 
@@ -628,10 +645,115 @@ kmMat4 getNodeToWorldTransform(cocos2d::CCNode* node)
 
     kmMat4 mvp;
     kmMat4Multiply(&mvp, &projection, &model);
+    #endif
+
     return mvp;
 }
 
+std::vector<DrawCommand> drawCommands = {};
+
 void VulkanRenderer::end()
 {
+    if (drawCommands.empty())
+        return;
     
+    std::sort(drawCommands.begin(), drawCommands.end(),
+    [](const DrawCommand& a, const DrawCommand& b)
+    {
+        if (a.texture != b.texture)
+            return a.texture < b.texture;
+
+        if (a.func.src != b.func.src)
+            return a.func.src < b.func.src;
+
+        if (a.func.dst != b.func.dst)
+            return a.func.dst < b.func.dst;
+
+        if (a.scissorEnabled != b.scissorEnabled)
+            return a.scissorEnabled < b.scissorEnabled;
+
+        return false;
+    });
+
+    auto current = drawCommands[0];
+
+    auto pipeline = VKPipeline::get<ccV3F_C4B_T2F_Quad>(
+        current.func,
+        VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP
+    );
+
+    pipeline->bind();
+    pipeline->bindTexture(current.texture);
+
+    updateScissor();
+
+    for (size_t i = 0; i < drawCommands.size(); i++)
+    {
+        auto& cmdData = drawCommands[i];
+
+        bool stateChanged =
+            cmdData.texture != current.texture ||
+            cmdData.func.src != current.func.src ||
+            cmdData.func.dst != current.func.dst ||
+            cmdData.scissorEnabled != current.scissorEnabled;
+
+        if (stateChanged)
+        {
+            current = cmdData;
+
+            pipeline = VKPipeline::get<ccV3F_C4B_T2F_Quad>(
+                current.func,
+                VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP
+            );
+
+            pipeline->bind();
+            pipeline->bindTexture(current.texture);
+        }
+
+        VkBuffer buffers[] = { cmdData.memory->getBuffer() };
+        VkDeviceSize offsets[] = { 0 };
+        vkCmdBindVertexBuffers(cmd, 0, 1, buffers, offsets);
+
+        vkCmdPushConstants(cmd,
+            pipeline->getLayout(),
+            VK_SHADER_STAGE_VERTEX_BIT,
+            0,
+            sizeof(kmMat4),
+            &cmdData.mat);
+
+        if (cmdData.scissorEnabled)
+        {
+            auto rect = cmdData.scissorRect;
+            float scale = 1.0f / CCDirector::get()->getWinSize().width * swapExtent.width;
+
+            VkRect2D scissor{};
+            scissor.extent = {
+                (uint32_t)(rect.size.width * scale),
+                (uint32_t)(rect.size.height * scale)
+            };
+            scissor.offset = {
+                (int)(rect.origin.x * scale),
+                (int)(swapExtent.height - scissor.extent.height - rect.origin.y * scale)
+            };
+
+            vkCmdSetScissor(cmd, 0, 1, &scissor);
+        }
+
+        INCREMENT_DRAW_CALLS(1);
+        vkCmdDraw(cmd, 4, 1, 0, 0);
+    }
+
+    drawCommands.clear();
+}
+
+void handleDrawCommand(cocos2d::CCSprite* sprite, VKCocosOwnedMemory* memory)
+{
+    drawCommands.push_back({
+        getNodeToWorldTransform(sprite),
+        sprite->getBlendFunc(),
+        sprite->getTexture(),
+        memory,
+        CCEGLView::get()->isScissorEnabled(),
+        CCEGLView::get()->getScissorRect()
+    });
 }

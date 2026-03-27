@@ -58,6 +58,11 @@ class $modify (VKSprite, CCSprite)
 
     virtual void draw()
     {
+        #ifdef DEPTH_BUFFER_EXPERIMENT
+        handleDrawCommand(this, m_fields->memory);
+        return;
+        #endif
+
         auto blendPipeline = VKPipeline::get<ccV3F_C4B_T2F_Quad>(getBlendFunc(), VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP);
         auto mvp = getNodeToWorldTransform(this);
 

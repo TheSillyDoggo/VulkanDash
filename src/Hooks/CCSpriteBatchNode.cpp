@@ -11,6 +11,7 @@
 using namespace geode::prelude;
 
 std::unordered_map<unsigned int, VKCocosOwnedMemory*> memories = {};
+std::unordered_map<unsigned int, VKCocosOwnedMemory*> memories2 = {};
 CCSpriteBatchNode* probablyTheLastBatchNode = nullptr;
 
 class $modify (CCSpriteBatchNode)
@@ -36,6 +37,17 @@ class $modify (VKTextureAtlas, CCTextureAtlas)
         return memories[m_uID];
     }
 
+    VKCocosOwnedMemory* getMemory2()
+    {       
+        if (!memories2.contains(m_uID))
+        {
+            memories2[m_uID] = VKCocosOwnedMemory::create(8);
+            memories2[m_uID]->retain();
+        }
+
+        return memories2[m_uID];
+    }
+
     bool resizeCapacity(unsigned int n)
     {
         auto ret = CCTextureAtlas::resizeCapacity(n);
@@ -45,28 +57,35 @@ class $modify (VKTextureAtlas, CCTextureAtlas)
 
     void drawQuads()
     {
-        auto pipeline = VKPipeline::get<ccV3F_C4B_T2F>(probablyTheLastBatchNode ? probablyTheLastBatchNode->getBlendFunc() : ccBlendFunc({GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA}));
+        // if (!CCDirector::get()->m_pFPSNode || this != CCDirector::get()->m_pFPSNode->getTextureAtlas()) return;
+
+        auto pipeline = VKPipeline::get<ccV3F_C4B_T2F_Quad>(
+            probablyTheLastBatchNode ? probablyTheLastBatchNode->getBlendFunc() : ccBlendFunc({GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA}),
+            VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP
+        );
         auto mvp = getNodeToWorldTransform(nullptr);
-        // getMemory()->resize(sizeof(ccV3F_C4B_T2F) * 4 * getTotalQuads());
-        // getMemory()->upload(m_pQuads, sizeof(ccV3F_C4B_T2F) * 4 * getTotalQuads());
 
-        auto mem = getMemory();
-        mem->resize(sizeof(ccV3F_C4B_T2F) * 6 * getCapacity());
-        auto out = reinterpret_cast<ccV3F_C4B_T2F*>(mem->getMapped());
+        std::vector<uint32_t> indices;
 
-        for (size_t i = 0; i < getCapacity(); i++)
+        for (uint32_t i = 0; i < getTotalQuads(); i++)
         {
-            auto quad = m_pQuads[i];
+            uint32_t base = i * 4;
 
-            size_t b = i * 6;
+            indices.push_back(base + 0);
+            indices.push_back(base + 1);
+            indices.push_back(base + 2);
+            indices.push_back(base + 3);
 
-            out[b + 0] = quad.bl;
-            out[b + 1] = quad.br;
-            out[b + 2] = quad.tl;
-            out[b + 3] = quad.tr;
-            out[b + 4] = quad.tl;
-            out[b + 5] = quad.br;
+            indices.push_back(0xFFFFFFFF);
         }
+
+        auto indexMem = getMemory2();
+
+        indexMem->resize(sizeof(uint32_t) * indices.size());
+        indexMem->upload(indices.data(), sizeof(uint32_t) * indices.size());
+
+        getMemory()->resize(sizeof(ccV3F_C4B_T2F_Quad) * getTotalQuads());
+        getMemory()->upload(m_pQuads, sizeof(ccV3F_C4B_T2F_Quad) * getTotalQuads());
         
         vkCmdPushConstants(cmd,
             pipeline->getLayout(),
@@ -83,8 +102,10 @@ class $modify (VKTextureAtlas, CCTextureAtlas)
         vkCmdBindVertexBuffers(cmd, 0, 1, buffers, offsets);
 
         updateScissor();
+        
         INCREMENT_DRAW_CALLS(1);
-        vkCmdDraw(cmd, 6 * getTotalQuads(), 1, 0, 0);
+        vkCmdBindIndexBuffer(cmd, indexMem->getBuffer(), 0, VK_INDEX_TYPE_UINT32);
+        vkCmdDrawIndexed(cmd, indices.size(), 1, 0, 0, 0);
     }
 };
 

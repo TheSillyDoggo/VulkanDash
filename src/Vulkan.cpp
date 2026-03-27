@@ -33,7 +33,7 @@ class $modify (CCEGLView)
 
         getRenderer()->end();
 
-        lbl->setString(fmt::format("VK Draw Calls: {}", drawCalls).c_str());
+        lbl->setString(fmt::format("VK Draw Calls: {}\nVK Bind Calls: {}\nvkBindDescriptorSet calls: {}", drawCalls, bindCalls, bindTextureCalls).c_str());
         lbl->visit();
         getRenderer()->present();
     }

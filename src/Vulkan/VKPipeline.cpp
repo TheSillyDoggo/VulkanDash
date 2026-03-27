@@ -14,6 +14,8 @@ void VKPipeline::bind()
         vkCmdBindPipeline(cmd,
             VK_PIPELINE_BIND_POINT_GRAPHICS,
             getPipeline());
+
+        INCREMENT_BIND_CALLS(1);
     }
 }
 
@@ -36,6 +38,8 @@ void VKPipeline::bindTexture(CCTexture2D* texture)
             0,
             nullptr
         );
+
+        INCREMENT_BIND_TEX_CALLS(1);
     }
 }
 
@@ -324,6 +328,7 @@ VkPipelineInputAssemblyStateCreateInfo VKPipeline::_VkPipelineInputAssemblyState
     VkPipelineInputAssemblyStateCreateInfo iasci{};
     iasci.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
     iasci.topology = top;
+    iasci.primitiveRestartEnable = VK_TRUE;
 
     return std::move(iasci);
 }
@@ -342,9 +347,13 @@ VkPipelineDepthStencilStateCreateInfo VKPipeline::_VkPipelineDepthStencilStateCr
 {
     VkPipelineDepthStencilStateCreateInfo dss{};
     dss.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+    #ifdef DEPTH_BUFFER_EXPERIMENT
+    dss.depthTestEnable = VK_TRUE;
+    #else
     dss.depthTestEnable = VK_FALSE;//VK_TRUE;
+    #endif
     dss.depthWriteEnable = VK_TRUE;
-    dss.depthCompareOp = VK_COMPARE_OP_LESS;// ;
+    dss.depthCompareOp = VK_COMPARE_OP_LESS;
     dss.depthBoundsTestEnable = VK_FALSE;
     dss.stencilTestEnable = VK_FALSE;
 
